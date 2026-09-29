@@ -22,6 +22,7 @@ const BADGE_MAP = {
   CRITICAL: 'b-crit', ERROR: 'b-err', New: 'b-new', Qualified: 'b-qual', Contacted: 'b-prog', Closed: 'b-comp', Lost: 'b-lost',
   Scheduled: 'b-sched', 'On Leave': 'b-res',
 };
+
 function Badge({ value }) {
   return <span className={`badge ${BADGE_MAP[value] || ''}`}>{value}</span>;
 }
@@ -46,6 +47,7 @@ function mapPayment(p) { return { contract: p.contract_id, amount: Number(p.amou
 function mapBroker(b) { return { name: b.name || b.full_name, role: b.role, status: b.status, appts: b.appts || 0, closed: b.closed || 0, value: b.value || 0 }; }
 
 export default function Dashboard() {
+  const [isMounted, setIsMounted] = useState(false);
   const [page, setPage] = useState('overview');
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
@@ -56,12 +58,22 @@ export default function Dashboard() {
   const [propFilters, setPropFilters] = useState({ status: '', city: '' });
   const [inqStatus, setInqStatus] = useState('');
 
+  // تأكيد تحميل الكلاينت لحل خطأ الـ Hydration
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     fetch('/api/dashboard-data')
-      .then((r) => r.json())
+      .then(async (r) => {
+        if (!r.ok) {
+          throw new Error(`خطأ من السيرفر (${r.status})`);
+        }
+        return r.json();
+      })
       .then((d) => { if (!cancelled) setRaw(d); })
-      .catch((e) => { if (!cancelled) setErr(String(e)); })
+      .catch((e) => { if (!cancelled) setErr(String(e.message || e)); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, []);
@@ -102,7 +114,7 @@ export default function Dashboard() {
   const revenueRef = useRef(null), funnelRef = useRef(null), sourceRef = useRef(null);
   const chartInstances = useRef({});
   useEffect(() => {
-    if (!raw) return;
+    if (!raw || !isMounted) return;
     Chart.defaults.color = '#8a7c67';
     Chart.defaults.font.family = "'Cairo', sans-serif";
     const gridColor = 'rgba(138,124,103,0.15)';
@@ -145,7 +157,16 @@ export default function Dashboard() {
       });
     }
     return () => Object.values(chartInstances.current).forEach((c) => c?.destroy());
-  }, [raw]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [raw, isMounted]);
+
+  // حماية الصفحة أثناء تهيئة الكلاينت
+  if (!isMounted) {
+    return (
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '100vh', color: '#8a7c67' }}>
+        جاري تهيئة اللوحة...
+      </div>
+    );
+  }
 
   return (
     <div className="shell">
